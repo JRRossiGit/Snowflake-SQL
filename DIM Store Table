@@ -1,0 +1,33 @@
+-- SQL Script: DIM Store Table logic that omits entries that are not related to the selected ZIPOWNER as well as keep entries relevant based on a rotating panel
+-- Version: 2.0
+-- Last Updated: 2024-11-21
+
+-- Step 1: Create a Common Table Expression (CTE) to filter users based on demographic and statistical criteria
+WITH STATIC_CTE AS (
+    SELECT DISTINCT 
+        ppl.user_id,          -- Unique identifier for users
+        stat.factoring,       -- Statistical factoring value for relevant users
+        stat.start_date,      -- Start date for the statistics group
+        stat.end_date,        -- End date for the statistics group
+        bot.zipowner          -- Owner of the ZIP code
+    FROM PEOPLE AS ppl
+    INNER JOIN STATISTIC_GRP AS stat 
+        ON ppl.user_id = stat.user_id
+    INNER JOIN DEMOGRAPHICS_BY_ZIP AS bot
+        ON ppl.POSTAL_CODE = bot.ZIPCODE
+    WHERE bot.ZIPOWNER = 'PLACEHOLDER'   -- Filter for specific ZIP code owner
+      AND stat.factoring > 0             -- Include only users with positive factoring values
+)
+
+-- Step 2: Retrieve retailer and channel details linked to filtered users
+SELECT DISTINCT 
+    Basket.BANNER_ID,       -- Unique identifier for retailer banners
+    Banner.BANNER,          -- Banner description
+    Banner.RETAILER,        -- Retailer name
+    Banner.CHANNEL,         -- Channel description
+    Banner.PARENT_CHANNEL   -- Parent channel description
+FROM STATIC_CTE AS Static
+INNER JOIN BASKET AS Basket
+    ON Basket.user_id = Static.user_id
+INNER JOIN BANNER AS Banner
+    ON Banner.banner_id = Basket.banner_id;
