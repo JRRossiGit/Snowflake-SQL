@@ -1,0 +1,63 @@
+-- SQL Script: Region Owner and User Attributes Analysis
+-- Version: 2.0
+-- Last Updated: 2024-11-22
+
+-- Step 1: Create a Common Table Expression (CTE) to filter transaction and user data for specified region owner
+WITH REGION_CTE AS (
+    -- Subset 1: Most recent two years of data
+    SELECT DISTINCT 
+        T.TRANSACTION_ID,         -- Transaction identifier
+        T.ITEM_ID,                -- Item identifier
+        T.USER_IDENTIFIER         -- User identifier
+    FROM TRANSACTIONS AS T
+    INNER JOIN USERS AS U 
+        ON U.USER_IDENTIFIER = T.USER_IDENTIFIER
+    INNER JOIN USER_STATS AS US 
+        ON US.USER_IDENTIFIER = T.USER_IDENTIFIER
+    INNER JOIN REGION_DEMOGRAPHICS AS RD 
+        ON RD.LOCATION_CODE = U.LOCATION_CODE
+    WHERE RD.REGION_OWNER = 'PLACEHOLDER_REGION' -- Filter for the specified region owner
+      AND US.LAST_UPDATE = (
+          SELECT MAX(LAST_UPDATE) 
+          FROM USER_STATS
+      )  -- Use the most recent update date for statistics
+      AND T.TRANSACTION_DATE >= (
+          SELECT MAX(START_DATE) 
+          FROM USER_STATS
+      )  -- Filter transactions starting from the most recent start date
+
+    UNION
+
+    -- Subset 2: Data from one year prior to the most recent statistical update
+    SELECT DISTINCT 
+        T.TRANSACTION_ID,         -- Transaction identifier
+        T.ITEM_ID,                -- Item identifier
+        T.USER_IDENTIFIER         -- User identifier
+    FROM TRANSACTIONS AS T
+    INNER JOIN USERS AS U 
+        ON U.USER_IDENTIFIER = T.USER_IDENTIFIER
+    INNER JOIN USER_STATS AS US 
+        ON US.USER_IDENTIFIER = T.USER_IDENTIFIER
+    INNER JOIN REGION_DEMOGRAPHICS AS RD 
+        ON RD.LOCATION_CODE = U.LOCATION_CODE
+    WHERE RD.REGION_OWNER = 'PLACEHOLDER_REGION' -- Filter for the specified region owner
+      AND US.LAST_UPDATE = (
+          SELECT DATEADD(YEAR, -1, MAX(LAST_UPDATE)) 
+          FROM USER_STATS
+      )  -- Shift last update date one year back
+      AND T.TRANSACTION_DATE <= (
+          SELECT DATEADD(YEAR, -1, MAX(LAST_UPDATE)) 
+          FROM USER_STATS
+      )  -- Transactions up to one year prior to the max update date
+      AND T.TRANSACTION_DATE >= (
+          SELECT DATEADD(YEAR, -1, MAX(START_DATE)) 
+          FROM USER_STATS
+      )  -- Transactions starting one year prior to the max start date
+)
+
+-- Step 2: Retrieve distinct user attributes linked to filtered regional data
+SELECT DISTINCT 
+    UA.* -- Retrieve all user attributes
+FROM USER_ATTRIBUTES AS UA
+INNER JOIN REGION_CTE AS RC
+    ON RC.USER_IDENTIFIER = UA.USER_IDENTIFIER;
