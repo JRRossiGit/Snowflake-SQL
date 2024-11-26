@@ -1,0 +1,96 @@
+-- Note: This query has been updated to use candy-related column names and anonymous data sources.
+-- Additional comments are included to explain each part of the query for clarity.
+
+with final as (
+select
+    -- Renaming columns to candy-related terminology
+    "Route To Candy Market" as route_to_market, -- The main distribution channel for candy products
+    "Candy Consumption" as consumption,        -- Consumption type of the candy
+    "Candy Perf MGMT SUB-Category" as performance_management_sub_category, -- Sub-category in performance management
+    "Candy Key Manufacturer" as key_manufacturer, -- Key manufacturer of the candy
+    "Candy Key Trademark" as key_trademark,     -- Trademark of the candy
+    "Candy Key Brand" as key_brand,             -- Brand of the candy
+    "Candy Key Package" AS key_package,         -- Packaging type of the candy
+    UPC,                                        -- Unique product code
+    "Item",                                     -- Name or SKU of the item
+    "Candy Caloric Segment" AS caloric_segment, -- Caloric segmentation of the candy
+
+    -- Derived fields with candy context
+    case
+        when "Candy Key Brand" ilike '%choco%' then 'CHOCOLATE' else "Candy Perf MGMT SUB-Category"
+    end as candy_performance_management_sub_category,
+    case
+        when "Candy Key Brand" ilike '%choco%' then 'TTL CHOCOLATE' else "Candy Key Brand"
+    end as candy_total_category,
+    case
+        -- Classifying candies into groups for analysis
+        when "Candy Perf MGMT SUB-Category" = 'GUM' then 'Chewing'
+        when "Candy Perf MGMT SUB-Category" = 'HARD CANDY' then 'Hard Candy'
+        when "Candy Perf MGMT SUB-Category" = 'CHOCOLATE' then 'Chocolate'
+        when "Candy Perf MGMT SUB-Category" = 'LICORICE' then 'Chewy'
+        else 'Other'
+    end::VARCHAR(4000) as candy_grouping,
+
+    -- Derived candy category logic
+    case
+        when "Candy Category" LIKE '%GUMMY%' then 'GUMMY CANDY'
+        when "Candy Category" LIKE '%CHOCOLATE%' then 'CHOCOLATE'
+        when "Candy Category" in ('TTL HARD CANDY', 'TTL MINTS') then 'HARD CANDY'
+        else 'ALL OTHER'
+    end as candy_category,
+    
+    -- Additional renamed columns
+    "Candy Category Segment" as CATEGORY_SEGMENT,
+    "Candy Business Review Category" as BUSINESS_REVIEW_CATEGORY,
+    "Candy Category" as CATEGORY,
+    "Candy Flavor Category" as FLAVOR_CATEGORY,
+    "Candy Key Flavor" as KEY_FLAVOR,
+    "Candy Organic Claim" as ORGANIC_CLAIM,
+    "Candy Price Tier" as PRICE_TIER,
+    "Candy Storage Type" as STORAGE_TYPE,
+    "Candy Sub-Brand" as SUB_BRAND,
+    "Candy SUB-Category" as SUB_CATEGORY,
+
+    -- Creating a unique product identifier
+    (UPC || '-' || key_package || '-' || key_brand)::varchar(4000) as PRODUCT_UNIQUE_KEY,
+
+    -- Assigning row numbers for further processing
+    ROW_NUMBER() OVER (
+        PARTITION BY UPC
+        ORDER BY "Period Description" DESC, UPC DESC
+    ) AS ROW_NUM,
+    "Period Description" -- Period for analysis
+
+from DB_ANONYMOUS.SANDBOX.CANDY_SAMPLE -- Note: Source anonymized
+)
+,
+INNOCTE as (
+Select
+    -- Renaming columns and creating innovation flags
+    UPC,
+    TO_DATE(SUBSTRING("Period Description", 7), 'MM/DD/YY') AS In_Market_Date, -- Extracting market entry date
+    ROW_NUMBER() OVER (
+        PARTITION BY UPC
+        ORDER BY "Period Description" ASC, UPC DESC
+    ) AS ROW_NUM,
+    (UPC || '-' || "Candy Key Package" || '-' || "Candy Key Brand")::varchar(4000) as PRODUCT_UNIQUE_KEY,
+
+    -- Setting innovation flags based on time in the market
+    case when DATEDIFF(month, In_Market_Date, current_date()) < 24 Then 'Y' Else 'N' End as "Innovation Flag",
+    case
+        when DATEDIFF(month, In_Market_Date, current_date()) < 13 Then 'Under 12 months'
+        when DATEDIFF(month, In_Market_Date, current_date()) between 13 and 24 Then '13-24 months'
+        when DATEDIFF(month, In_Market_Date, current_date()) > 24 Then 'Over 24 months'
+    End as INNOVATION_TIME_FRAME
+
+from DB_ANONYMOUS.SANDBOX.CANDY_SAMPLE -- Note: Source anonymized
+WHERE 1=1
+)
+select final.*,
+    In_Market_Date,
+    "Innovation Flag",
+    INNOVATION_TIME_FRAME
+from final
+inner join INNOCTE on final.UPC = INNOCTE.UPC and INNOCTE.ROW_NUM = 1
+WHERE 1=1
+and final.ROW_NUM = 1;
