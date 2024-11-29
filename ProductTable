@@ -1,0 +1,67 @@
+-- commit: Update query for candy analysis with detailed documentation
+-- date: 2024-11-29
+
+-- Change Summary:
+-- Adjusted field names, filter criteria, and category mappings.
+-- Enhanced documentation for clarity and maintainability.
+
+-- Begin Query
+
+WITH USER_DEMOGRAPHICS_CTE AS (
+    SELECT DISTINCT 
+        users.user_id,              -- Unique identifier for users
+        demo.zip_code,              -- Zip code of the user
+        demo.city,                  -- City of the user
+        demo.state,                 -- State of the user
+        demo.country,               -- Country of the user
+        demo.weighting,             -- Weighting factor for demographics
+        demo.factoring,             -- Factoring metric for demographics
+        stats.end_date,             -- End date of stats data
+        demo.owner,                 -- Owner information for the region
+        stats.start_date            -- Start date of stats data
+    FROM USERS_TABLE AS users
+    INNER JOIN USER_STATS_TABLE AS stats 
+        ON users.user_id = stats.user_id
+    INNER JOIN DEMOGRAPHICS_TABLE AS demo 
+        ON users.postal_code = demo.zip_code
+    WHERE demo.REGION_OWNER = 'PLACEHOLDER'  -- Filter by specific region owner
+      AND stats.factoring > 0                -- Ensure valid factoring data
+)
+
+SELECT DISTINCT 
+    items.item_id AS item_id,               -- Unique identifier for items
+    items.gtin,                             -- Global Trade Item Number
+    items.upc,                              -- Universal Product Code
+    items.brand_name,                       -- Brand name of the item
+    items.parent_brand_name,                -- Parent brand of the item
+    items.category_name,                    -- Item's category
+    items.major_category_name,              -- Major category of the item
+    items.department_name,                  -- Department where item is classified
+    items.sector_name,                      -- Sector information
+    items.manufacturer_name,                -- Name of the manufacturer
+    items.subcategory_name,                 -- Subcategory of the item
+    CASE 
+        -- Competitor flag based on manufacturer names
+        WHEN items.manufacturer_name IN ('BRAND_1', 'BRAND_2') THEN '0'
+        ELSE '1' 
+    END AS competitor_flag,
+    CASE items.category_name
+        -- Standardized categories for candy
+        WHEN 'Chocolate' THEN 'Chocolate/Candy'
+        WHEN 'Hard Candy' THEN 'Candy'
+        WHEN 'Gum' THEN 'Candy'
+        WHEN 'Licorice' THEN 'Candy'
+        WHEN 'Mints' THEN 'Candy'
+        WHEN 'Lollipops' THEN 'Candy'
+        ELSE 'Unknown'
+    END AS standardized_category
+FROM USER_DEMOGRAPHICS_CTE AS demo
+INNER JOIN PURCHASE_BASKET_TABLE AS basket 
+    ON basket.user_id = demo.user_id
+INNER JOIN ITEM_DETAILS_TABLE AS items 
+    ON items.item_id = basket.item_id;
+
+-- Notes:
+-- 1. Retained the overall structure for compatibility with existing workflows.
+
+-- End Query
