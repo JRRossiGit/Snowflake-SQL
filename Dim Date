@@ -1,0 +1,66 @@
+-- SQL Script: Creating a Date table to accommodate relevant dates and fields with always corresponding data.
+-- Version: 1.0
+-- Last Updated: 2024-12-02
+
+WITH DEMOGRAPHICS_CTE AS (
+    SELECT DISTINCT 
+        users.user_id, 
+        demo.zip_code, 
+        demo.city, 
+        demo.state, 
+        demo.country, 
+        demo.weighting, 
+        stats.factoring, 
+        stats.end_date, 
+        demo.primary_owner, 
+        stats.start_date
+    FROM USERS_TABLE AS users
+    INNER JOIN USER_STATS_TABLE AS stats 
+        ON users.user_id = stats.user_id
+    INNER JOIN CENSUS_DEMOGRAPHICS_TABLE AS demo 
+        ON users.postal_code = demo.zip_code
+    WHERE demo.primary_owner = 'PLACEHOLDER_OWNER' 
+      AND stats.national_factor > 0 
+      AND (stats.end_date = (
+          SELECT MAX(end_date)
+          FROM USER_STATS_TABLE
+      ) OR stats.end_date = (
+          SELECT DATEADD(YEAR, -1, MAX(end_date))
+          FROM USER_STATS_TABLE
+      ))
+)
+
+SELECT DISTINCT 
+    dates.date_id,
+    CASE 
+        WHEN DATE_PART('dow', transactions.transaction_date) <= 4
+        THEN DATEADD(day, 4 - DATE_PART('dow', transactions.transaction_date), transactions.transaction_date)
+        ELSE DATEADD(day, 11 - DATE_PART('dow', transactions.transaction_date), transactions.transaction_date)
+    END AS week_ending_thursday,
+    transactions.transaction_date, 
+    transactions.date AS transaction_date, 
+    dates.year, 
+    dates.calendar_year, 
+    dates.calendar_month, 
+    dates.calendar_quarter, 
+    dates.week_of_year, 
+    dates.previous_year_date, 
+    dates.ytd_filter, 
+    dates.wtd_filter, 
+    dates.day_of_year, 
+    dates.wtd_filter AS weeks_ago, 
+    dates.calendar_ytd_filter AS years_ago, 
+    dates.week_ending, 
+    ABS(DATEDIFF(
+        week, 
+        DATEADD(day, 3, transactions.transaction_date), 
+        DATEADD(day, 3, (SELECT MAX(transaction_date) FROM TRANSACTIONS_TABLE))
+    )) AS weeks_ago
+FROM DATES_DIM_TABLE AS dates
+JOIN TRANSACTIONS_TABLE AS Basket 
+    ON dates.date = transactions.transaction_date
+WHERE transactions.transaction_date >= (
+        SELECT DATEADD(YEAR, -1, MAX(start_date)) 
+        FROM USER_STATS_TABLE
+    ) 
+ORDER BY dates.date_id DESC;
