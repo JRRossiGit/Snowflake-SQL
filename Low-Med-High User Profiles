@@ -1,0 +1,83 @@
+WITH CTE_BASE AS (
+    SELECT DISTINCT BSKT.unique_key AS UNIQUE_KEY,
+           BSKT.transaction_date AS TRANSACTION_DATE,
+           BSKT.basket_number AS BASKET_ID,
+           BSKT.item_number AS ITEM_ID,
+           BSKT.user_number AS USER_ID,
+           CAT.category_desc AS CATEGORY,
+           BSKT.store_number AS STORE_ID,
+           BSKT.item_unit_price AS ITEM_PRICE,
+           BSKT.national_factor AS NATIONAL_FACTOR,
+           BSKT.trend_factor AS TREND_FACTOR,
+           DEMO.demo_weight AS DEMO_WEIGHT,
+           BSKT.damped_item_total AS DAMPED_ITEM_TOTAL,
+           BSKT.damped_item_quantity AS DAMPED_ITEM_QUANTITY,
+           BSKT.damped_basket_quantity AS BASKET_ITEM_COUNT,
+           BSKT.damped_basket_sub_total AS BASKET_TOTAL,
+           STAT.end_date AS END_DATE,
+           ITEM.parent_brand_desc AS BRAND,
+           ITEM.major_category_desc AS MAJOR_CATEGORY,
+           ROUND((BSKT.national_factor * BSKT.trend_factor * DEMO.demo_weight * BSKT.damped_item_total), 2) AS ITEM_TOTAL
+    FROM DB_CANDY_SALES.TRANSFORMED.FACT_CANDY_BASKET AS BSKT
+    INNER JOIN DB_CANDY_SALES.TRANSFORMED.DIM_USER_DETAILS AS USER ON USER.user_number = BSKT.user_number
+    INNER JOIN DB_CANDY_SALES.TRANSFORMED.DIM_STATISTIC_GROUPS AS STAT ON STAT.user_number = BSKT.user_number
+    INNER JOIN DB_CANDY_SALES.DEMOGRAPHICS.ZIP_CENSUS AS DEMO ON DEMO.zipcode = USER.postal_code
+    INNER JOIN DB_CANDY_SALES.TRANSFORMED.DIM_CANDY_ITEM AS ITEM ON BSKT.item_number = ITEM.item_number
+    WHERE DEMO.candy_distributor = 'Placeholder'
+      AND BSKT.national_factor IS NOT NULL 
+      AND DEMO.demo_weight IS NOT NULL 
+      AND BSKT.trend_factor IS NOT NULL
+      AND STAT.end_date = (SELECT MAX(end_date) FROM DB_CANDY_SALES.TRANSFORMED.DIM_STATISTIC_GROUPS)
+      AND BSKT.transaction_date >= (SELECT MAX(start_date) FROM DB_CANDY_SALES.TRANSFORMED.DIM_STATISTIC_GROUPS)
+),
+
+cte_Crunch AS (
+    SELECT USER_ID,
+           CASE WHEN SUM(ITEM_TOTAL) = 0 THEN 0
+                ELSE NTILE(3) OVER (ORDER BY SUM(ITEM_TOTAL)) 
+           END AS CRUNCH_GROUP
+    FROM CTE_BASE
+    WHERE BRAND = 'Choco Crunch'
+    GROUP BY USER_ID
+),
+
+cte_SourBites AS (
+    SELECT USER_ID,
+           CASE WHEN SUM(ITEM_TOTAL) = 0 THEN 0
+                ELSE NTILE(3) OVER (ORDER BY SUM(ITEM_TOTAL)) 
+           END AS SOUR_GROUP
+    FROM CTE_BASE
+    WHERE BRAND LIKE 'Sour Bites%'
+    GROUP BY USER_ID
+),
+
+cte_Gummies AS (
+    SELECT USER_ID,
+           CASE WHEN SUM(ITEM_TOTAL) = 0 THEN 0
+                ELSE NTILE(3) OVER (ORDER BY SUM(ITEM_TOTAL)) 
+           END AS GUMMIES_GROUP
+    FROM CTE_BASE
+    WHERE MAJOR_CATEGORY = 'Gummies'
+    GROUP BY USER_ID
+)
+
+SELECT DISTINCT BASE.USER_ID,
+       CASE WHEN CRUNCH.CRUNCH_GROUP = 3 THEN 'High' 
+            WHEN CRUNCH.CRUNCH_GROUP = 2 THEN 'Med' 
+            WHEN CRUNCH.CRUNCH_GROUP = 1 THEN 'Low' 
+            ELSE 'None' 
+       END AS CHOCO_CRUNCH_USER,
+       CASE WHEN SOUR.SOUR_GROUP = 3 THEN 'High' 
+            WHEN SOUR.SOUR_GROUP = 2 THEN 'Med' 
+            WHEN SOUR.SOUR_GROUP = 1 THEN 'Low' 
+            ELSE 'None' 
+       END AS SOUR_BITES_USER,
+       CASE WHEN GUM.GUMMIES_GROUP = 3 THEN 'High' 
+            WHEN GUM.GUMMIES_GROUP = 2 THEN 'Med' 
+            WHEN GUM.GUMMIES_GROUP = 1 THEN 'Low' 
+            ELSE 'None' 
+       END AS GUMMIES_USER
+FROM CTE_BASE AS BASE
+LEFT JOIN cte_Crunch AS CRUNCH ON BASE.USER_ID = CRUNCH.USER_ID
+LEFT JOIN cte_SourBites AS SOUR ON BASE.USER_ID = SOUR.USER_ID
+LEFT JOIN cte_Gummies AS GUM ON BASE.USER_ID = GUM.USER_ID;
